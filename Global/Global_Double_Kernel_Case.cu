@@ -1,0 +1,107 @@
+#include "./Measurements.cu"
+#include "./Pragmas.cu"
+
+__global__ void globalDoubleKernelKernel(const int *input, int* output, const unsigned int inputsize)
+{
+	__shared__ int sdata[THREADBLOCKSIZE];
+	const unsigned int tx = threadIdx.x;
+	const unsigned int bx = blockIdx.x; 
+	const size_t offset = bx * blockDim.x + tx;
+	
+	// Read data
+	sdata[tx] = offset < inputsize ? input[offset] : 0;
+	__syncthreads();
+	
+	// Folding
+	FOR_BASIC_REDUCTION_X(sdata, tx, THREADBLOCKSIZE/2, 0)
+	
+	if(tx == 0)
+		output[bx] = sdata[0];
+}
+
+__global__ void globalDoubleKernelFinalKernel(const int *input, int* output, const unsigned int inputsize)
+{
+	__shared__ int sdata[THREADBLOCKSIZE];
+	const unsigned int tx = threadIdx.x;
+	const unsigned int bx = blockIdx.x; 
+	const size_t offset = bx * blockDim.x + tx;
+	
+	// Read data
+	sdata[tx] = offset < inputsize ? input[offset] : 0;
+    for (unsigned int i = tx+1024; i < inputsize; i += 1024) {
+        sdata[tx] = sdata[tx] + input[i];
+    }
+	__syncthreads();
+	
+	// Folding
+	FOR_BASIC_REDUCTION_X(sdata, tx, THREADBLOCKSIZE/2, 0)
+	
+	if(tx == 0)
+		output[bx] = sdata[0];
+}
+
+void globalDoubleKernel(Measurements* measurements)
+{
+    const size_t inputByteSize = INPUTSIZE * sizeof(int);
+	const size_t outputByteSize = GRIDSIZE * sizeof(int);
+	int *h_input, *d_input, *d_output;
+	int res = 0, trueRes = 0;
+	
+	// Initialise input arrays with 1s
+	h_input = (int*)mallocMeasurements(inputByteSize, measurements);
+	for(size_t i = 0; i < INPUTSIZE; ++i) {
+		h_input[i] = i; 
+		trueRes += i; 
+	}
+	
+	cudaMalloc(&d_input, INPUTSIZE * sizeof(int));
+	cudaMemcpy(d_input, h_input, inputByteSize, cudaMemcpyHostToDevice);
+	
+	// Initialise output arrays
+	cudaMalloc(&d_output, outputByteSize);
+	
+	// Fold operation
+	for(int i = 0; i < ITERATIONS; ++i) {
+		size_t inputsize = INPUTSIZE;
+        size_t gridsize = GRIDSIZE;
+        
+        startGpuTimer(measurements);
+        globalDoubleKernelKernel<<<gridsize, THREADBLOCKSIZE>>>(d_input, d_output, inputsize);
+        inputsize = gridsize;
+        //gridsize = (gridsize + THREADBLOCKSIZE - 1) / THREADBLOCKSIZE;
+		recordTime(measurements, measurements->gpuFoldTime, stopGpuTimer(measurements));
+        
+        startGpuTimer(measurements);
+        globalDoubleKernelFinalKernel<<<1, THREADBLOCKSIZE>>>(d_output, d_output, inputsize);
+        recordTime(measurements, measurements->gpuFoldTime, stopGpuTimer(measurements));
+        
+		recordTime(measurements, measurements->gpuFoldTime, stopGpuTimer(measurements));
+		cudaDeviceSynchronize();
+		measurements->iterations++;
+	}
+    cudaMemcpy(&res, d_output, sizeof(int), cudaMemcpyDeviceToHost);
+    
+	// Update final measurements
+	measurements->success = measurements->success && res == trueRes;
+	checkGpuErrors(measurements);
+	
+	// Free everything
+	free(h_input);
+	cudaFree(d_input);
+	cudaFree(d_output);
+}
+
+#ifndef HASMAIN
+#define HASMAIN
+int main(void)
+{
+	char foldName[] = "Global_Double_Kernel";
+	Measurements* measurements = measurements_new((char*)&foldName);
+	globalDoubleKernel(measurements);
+	printMeasurements(measurements);
+	
+	free(measurements);
+	
+	return 0;
+}
+#endif

@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Create directory and remove all contents if it already existed
+rm -r Test_Results; mkdir Test_Results
+
+# Create sum file
+filenameTotal="./Test_Results/Total.csv"
+
+# Set up test variables
+tb=1024
+iter=200
+
+# Every input element should take up 4 bytes (int 32)
+echo "Completed setup, starting tests"
+
+# KB steps
+# Min:       0 B            (0 000 000) / 4 =      0 elements
+# Max:       1MB            (1 000 000) / 4 = 250000 elements
+# Step:     40kB, 25 steps  (0 040 000) / 4 =  10000 elements
+echo "  Starting kB steps..."
+for ((input=0; input<=250000; input+=10000))
+do
+    # Add results for every threadblock size
+	nvcc Main.cu -o Main -D "INPUTSIZE=$input,THREADBLOCKSIZE=$tb,CSV,ITERATIONS=$iter"
+	filenameInput="./Test_Results/I${input}.csv"
+	./Main | tee -a "$filenameInput" >> "$filenameTotal"
+    echo "    Completed $input"
+done
+echo "  Completed kB steps!"
+
+# MB steps
+# Min:       0MB            (0 000 000 000) / 4 =         0 elements
+# Max:       1GB            (1 000 000 000) / 4 = 250000000 elements
+# Step:     40MB, 25 steps  (0 040 000 000) / 4 =  10000000 elements
+echo "  Completed MB steps..."
+for ((input=10000000; input<=250000000; input+=10000000))
+do
+    # Add results for every threadblock size
+	nvcc Main.cu -o Main -D "INPUTSIZE=$input,THREADBLOCKSIZE=$tb,CSV,ITERATIONS=$iter"
+	filenameInput="./Test_Results/I${input}.csv"
+	./Main | tee -a "$filenameInput" >> "$filenameTotal"
+    echo "    Completed $input"
+done
+echo "  Completed MB steps!"
+
+# GB steps
+# Min:       1GB            (1 000 000 000) / 4 =  250000000 elements
+# Max:       4GB            (4 000 000 000) / 4 = 1000000000 elements
+# Step:    500MB, 6 steps   (0 500 000 000) / 4 =  125000000 elements
+echo "  Starting GB steps..."
+for ((input=250000000; input<=1000000000; input+=125000000))
+do
+    # Add results for every threadblock size
+	nvcc Main.cu -o Main -D "INPUTSIZE=$input,THREADBLOCKSIZE=$tb,CSV,ITERATIONS=$iter"
+	filenameInput="./Test_Results/I${input}.csv"
+	./Main | tee -a "$filenameInput" >> "$filenameTotal"
+    echo "    Completed $input"
+done
+echo "  Completed GB steps!"
+
+# Total, should run about (iter * sum(all steps)) program:
+# 200 * (25*25*6) =  
+
+echo "Finished tests!"
