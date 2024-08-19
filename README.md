@@ -7,8 +7,10 @@ This bash script compiles and runs program files of a specific set of strategies
 - **MB** range
 - **GB** range
 
-To run tests, simply navigate to one of the folders containing the strategies and run the following command in Bash.
+To run tests, simply navigate to one of the folders containing the strategies and run the Bash script. 
+For example, for the global tests use the following commands:
 ```
+cd ./Global
 ../bash_run_expirements
 ```
 This generates a folder named `Test_Results` containing several csv files for the different input sizes and one with the results for all input input sizes.
